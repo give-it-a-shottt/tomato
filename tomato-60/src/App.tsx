@@ -8,6 +8,8 @@ interface TimerSettings {
   longBreak: number;
   autoStartBreaks: boolean;
   autoStartFocus: boolean;
+  goalTime: number; // 목표시간 (시간 단위)
+  cycleCount: number; // 뽀모도로 사이클 반복 횟수
 }
 
 const DEFAULT_SETTINGS: TimerSettings = {
@@ -16,6 +18,8 @@ const DEFAULT_SETTINGS: TimerSettings = {
   longBreak: 15,
   autoStartBreaks: true,
   autoStartFocus: false,
+  goalTime: 12, // 기본 목표시간: 12시간
+  cycleCount: 4, // 기본 사이클 횟수: 4
 };
 
 function App() {
@@ -27,12 +31,64 @@ function App() {
   const [pomodoroCount, setPomodoroCount] = useState(0);
   const [totalFocusTime, setTotalFocusTime] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [goalAchieved, setGoalAchieved] = useState(false);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
   }, []);
+
+  // 목표시간 달성 확인
+  useEffect(() => {
+    const goalSeconds = settings.goalTime * 3600;
+    if (!goalAchieved && totalFocusTime >= goalSeconds) {
+      setGoalAchieved(true);
+
+      // 웹페이지 포커스 시도
+      window.focus();
+
+      // 브라우저 탭 타이틀 깜빡임 효과
+      const originalTitle = document.title;
+      const alertTitle = "🎉 목표 달성!";
+      let count = 0;
+      const maxCount = 10;
+
+      const titleInterval = setInterval(() => {
+        document.title = count % 2 === 0 ? alertTitle : originalTitle;
+        count++;
+
+        if (count >= maxCount) {
+          clearInterval(titleInterval);
+          document.title = originalTitle;
+        }
+      }, 1000);
+
+      const stopFlashing = () => {
+        clearInterval(titleInterval);
+        document.title = originalTitle;
+        window.removeEventListener("focus", stopFlashing);
+      };
+
+      window.addEventListener("focus", stopFlashing);
+
+      // 알림 표시
+      if ("Notification" in window && Notification.permission === "granted") {
+        const notification = new Notification("목표 달성! 🎉", {
+          body: `${settings.goalTime}시간 집중 목표를 달성했습니다! 축하합니다!`,
+          requireInteraction: true,
+        });
+
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      }
+
+      // 축하 사운드 재생
+      playGoalAchievedSound();
+    }
+  }, [totalFocusTime, settings.goalTime, goalAchieved]);
 
   useEffect(() => {
     let interval: number | undefined;
@@ -58,6 +114,13 @@ function App() {
 
   const handleTimerComplete = () => {
     setIsRunning(false);
+
+    // 웹페이지 포커스 시도
+    window.focus();
+
+    // 브라우저 탭 타이틀 깜빡임 효과
+    flashTitle();
+
     showNotification();
     playSound();
 
@@ -74,6 +137,32 @@ function App() {
     }
   };
 
+  const flashTitle = () => {
+    const originalTitle = document.title;
+    const alertTitle = "⏰ 타이머 완료!";
+    let count = 0;
+    const maxCount = 10; // 5번 깜빡임
+
+    const titleInterval = setInterval(() => {
+      document.title = count % 2 === 0 ? alertTitle : originalTitle;
+      count++;
+
+      if (count >= maxCount) {
+        clearInterval(titleInterval);
+        document.title = originalTitle;
+      }
+    }, 1000);
+
+    // 사용자가 창을 클릭하면 깜빡임 중지
+    const stopFlashing = () => {
+      clearInterval(titleInterval);
+      document.title = originalTitle;
+      window.removeEventListener("focus", stopFlashing);
+    };
+
+    window.addEventListener("focus", stopFlashing);
+  };
+
   const showNotification = () => {
     if ("Notification" in window && Notification.permission === "granted") {
       const messages = {
@@ -82,9 +171,16 @@ function App() {
         longBreak: "긴 휴식 완료! 새로운 집중 시간을 시작하세요",
       };
 
-      new Notification("뽀모도로 타이머", {
+      const notification = new Notification("뽀모도로 타이머", {
         body: messages[mode],
+        requireInteraction: true, // 사용자가 직접 닫을 때까지 유지
       });
+
+      // 알림 클릭 시 창으로 포커스
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
     }
   };
 
@@ -121,6 +217,40 @@ function App() {
     });
   };
 
+  const playGoalAchievedSound = () => {
+    const audioContext = new (window.AudioContext ||
+      (window as any).webkitAudioContext)();
+
+    // 축하 멜로디: C5-E5-G5-C6-G5-C6 (더 화려하게)
+    const melody = [
+      { frequency: 523.25, start: 0, duration: 0.3 },      // C5
+      { frequency: 659.25, start: 0.3, duration: 0.3 },    // E5
+      { frequency: 783.99, start: 0.6, duration: 0.3 },    // G5
+      { frequency: 1046.50, start: 0.9, duration: 0.4 },   // C6
+      { frequency: 783.99, start: 1.3, duration: 0.3 },    // G5
+      { frequency: 1046.50, start: 1.6, duration: 0.8 },   // C6 (길게)
+    ];
+
+    melody.forEach(note => {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.frequency.value = note.frequency;
+      oscillator.type = "sine";
+
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime + note.start);
+      gainNode.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + note.start + 0.05);
+      gainNode.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + note.start + note.duration - 0.1);
+      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + note.start + note.duration);
+
+      oscillator.start(audioContext.currentTime + note.start);
+      oscillator.stop(audioContext.currentTime + note.start + note.duration);
+    });
+  };
+
   const switchMode = (newMode: TimerMode, autoStart: boolean = false) => {
     const newTime = settings[newMode] * 60;
     setMode(newMode);
@@ -144,6 +274,10 @@ function App() {
     setTimeLeft(newTime);
     setInitialTime(newTime);
     setShowSettings(false);
+    // 목표시간이 변경되면 달성 상태 리셋
+    if (newSettings.goalTime !== settings.goalTime) {
+      setGoalAchieved(false);
+    }
   };
 
   const formatTime = (seconds: number): string => {
@@ -221,18 +355,24 @@ function App() {
               {currentConfig.label}
             </h1>
 
-            {/* 뽀모도로 사이클 표시 (4개 중 현재 위치) */}
-            <div className="flex justify-center gap-2 mb-2">
-              {[0, 1, 2, 3].map((index) => (
-                <div
-                  key={index}
-                  className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                    index < pomodoroCount % 4
-                      ? "bg-white scale-125"
-                      : "bg-white/30"
-                  }`}
-                />
-              ))}
+            {/* 뽀모도로 사이클 표시 */}
+            <div className="flex justify-center gap-2 mb-2 flex-wrap max-w-md mx-auto">
+              {Array.from({ length: settings.cycleCount }).map((_, index) => {
+                const isMilestone = (index + 1) % 4 === 0; // 4번째마다 체크
+                const isCompleted = index < pomodoroCount % settings.cycleCount;
+                return (
+                  <div
+                    key={index}
+                    className={`rounded-full transition-all duration-300 ${
+                      isMilestone ? "w-3 h-3" : "w-2 h-2"
+                    } ${
+                      isCompleted
+                        ? `bg-white ${isMilestone ? "scale-150" : "scale-125"}`
+                        : "bg-white/30"
+                    }`}
+                  />
+                );
+              })}
             </div>
 
             <p className="text-white/60 text-sm">
@@ -318,7 +458,7 @@ function App() {
           </div>
 
           {/* 통계 */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 text-center">
               <div className="text-3xl font-bold text-white">
                 {pomodoroCount}
@@ -330,6 +470,31 @@ function App() {
                 {formatTotalTime(totalFocusTime)}
               </div>
               <div className="text-white/60 text-sm mt-1">집중 시간</div>
+            </div>
+          </div>
+
+          {/* 목표 달성 프로그레스 */}
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-white/80 text-sm font-medium">목표 달성</span>
+              <span className="text-white text-sm font-bold">
+                {Math.min(Math.round((totalFocusTime / (settings.goalTime * 3600)) * 100), 100)}%
+              </span>
+            </div>
+            <div className="w-full bg-white/20 rounded-full h-3 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  totalFocusTime >= settings.goalTime * 3600
+                    ? "bg-gradient-to-r from-green-400 to-emerald-500"
+                    : "bg-gradient-to-r from-orange-400 to-pink-500"
+                }`}
+                style={{
+                  width: `${Math.min((totalFocusTime / (settings.goalTime * 3600)) * 100, 100)}%`,
+                }}
+              />
+            </div>
+            <div className="text-white/60 text-xs mt-2 text-center">
+              목표: {settings.goalTime}시간 {totalFocusTime >= settings.goalTime * 3600 ? "✓ 달성!" : ""}
             </div>
           </div>
         </div>
@@ -374,9 +539,11 @@ function SettingsForm({
     settings.autoStartBreaks
   );
   const [autoStartFocus, setAutoStartFocus] = useState(settings.autoStartFocus);
+  const [goalTime, setGoalTime] = useState(settings.goalTime);
+  const [cycleCount, setCycleCount] = useState(settings.cycleCount);
 
   const handleSave = () => {
-    onSave({ focus, shortBreak, longBreak, autoStartBreaks, autoStartFocus });
+    onSave({ focus, shortBreak, longBreak, autoStartBreaks, autoStartFocus, goalTime, cycleCount });
   };
 
   return (
@@ -419,6 +586,37 @@ function SettingsForm({
           onChange={(e) => setLongBreak(Number(e.target.value))}
           className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:outline-none text-lg font-semibold"
         />
+      </div>
+
+      <div className="border-t border-gray-200 pt-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          목표 시간 (시간)
+        </label>
+        <input
+          type="number"
+          min="1"
+          max="24"
+          value={goalTime}
+          onChange={(e) => setGoalTime(Number(e.target.value))}
+          className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-orange-500 focus:outline-none text-lg font-semibold"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          사이클 반복 횟수
+        </label>
+        <input
+          type="number"
+          min="1"
+          max="12"
+          value={cycleCount}
+          onChange={(e) => setCycleCount(Number(e.target.value))}
+          className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-purple-500 focus:outline-none text-lg font-semibold"
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          표시할 점의 개수 (긴 휴식은 항상 4번째마다)
+        </p>
       </div>
 
       <div className="border-t border-gray-200 pt-4 space-y-3">

@@ -32,12 +32,37 @@ function App() {
   const [totalFocusTime, setTotalFocusTime] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [goalAchieved, setGoalAchieved] = useState(false);
+  const [startTime, setStartTime] = useState<number | null>(null);
+  const [pausedTime, setPausedTime] = useState<number>(0);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission();
     }
   }, []);
+
+  // Page Visibility API - 탭 활성화 시 정확한 시간 재계산
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && isRunning && startTime !== null) {
+        // 탭이 다시 활성화되었을 때 실제 경과 시간 재계산
+        const now = Date.now();
+        const elapsedSeconds = Math.floor((now - startTime) / 1000);
+        const newTimeLeft = Math.max(0, initialTime - elapsedSeconds);
+        setTimeLeft(newTimeLeft);
+
+        // 이미 완료된 경우
+        if (newTimeLeft === 0) {
+          handleTimerComplete();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [isRunning, startTime, initialTime]);
 
   // 목표시간 달성 확인
   useEffect(() => {
@@ -90,30 +115,53 @@ function App() {
     }
   }, [totalFocusTime, settings.goalTime, goalAchieved]);
 
+  // 타이머 시작/정지 시 시간 기록
+  useEffect(() => {
+    if (isRunning) {
+      // 타이머 시작 - 현재 시간에서 이미 경과한 시간을 뺀 시점을 시작 시간으로 설정
+      const elapsedSeconds = initialTime - timeLeft;
+      setStartTime(Date.now() - elapsedSeconds * 1000);
+    } else {
+      // 타이머 정지 - 현재 남은 시간을 기록
+      setPausedTime(timeLeft);
+      setStartTime(null);
+    }
+  }, [isRunning]);
+
+  // 정확한 타이머 로직 - 실제 경과 시간 기반
   useEffect(() => {
     let interval: number | undefined;
+    let lastFocusUpdate = Date.now();
 
-    if (isRunning && timeLeft > 0) {
+    if (isRunning && startTime !== null) {
       interval = window.setInterval(() => {
-        setTimeLeft((prev) => {
-          const newTime = prev - 1;
-          if (mode === "focus") {
-            setTotalFocusTime((total) => total + 1);
-          }
-          return newTime;
-        });
-      }, 1000);
-    } else if (timeLeft === 0 && isRunning) {
-      handleTimerComplete();
+        const now = Date.now();
+        const elapsedSeconds = Math.floor((now - startTime) / 1000);
+        const newTimeLeft = Math.max(0, initialTime - elapsedSeconds);
+
+        // 집중 시간 업데이트 (1초에 한 번만)
+        if (mode === "focus" && now - lastFocusUpdate >= 1000) {
+          const secondsToAdd = Math.floor((now - lastFocusUpdate) / 1000);
+          setTotalFocusTime((total) => total + secondsToAdd);
+          lastFocusUpdate = now;
+        }
+
+        setTimeLeft(newTimeLeft);
+
+        if (newTimeLeft === 0) {
+          handleTimerComplete();
+        }
+      }, 100); // 100ms마다 체크하여 더 정확하게
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isRunning, timeLeft, mode]);
+  }, [isRunning, startTime, mode, initialTime]);
 
   const handleTimerComplete = () => {
     setIsRunning(false);
+    setStartTime(null);
 
     // 웹페이지 포커스 시도
     window.focus();
@@ -256,6 +304,8 @@ function App() {
     setMode(newMode);
     setTimeLeft(newTime);
     setInitialTime(newTime);
+    setStartTime(null);
+    setPausedTime(newTime);
     setIsRunning(autoStart);
   };
 
@@ -266,6 +316,8 @@ function App() {
   const resetTimer = () => {
     setIsRunning(false);
     setTimeLeft(initialTime);
+    setStartTime(null);
+    setPausedTime(initialTime);
   };
 
   const updateSettings = (newSettings: TimerSettings) => {
@@ -273,6 +325,8 @@ function App() {
     const newTime = newSettings[mode] * 60;
     setTimeLeft(newTime);
     setInitialTime(newTime);
+    setStartTime(null);
+    setPausedTime(newTime);
     setShowSettings(false);
     // 목표시간이 변경되면 달성 상태 리셋
     if (newSettings.goalTime !== settings.goalTime) {

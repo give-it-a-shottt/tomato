@@ -35,10 +35,13 @@ const DEFAULT_SETTINGS: TimerSettings = {
   cycleCount: 4, // 기본 사이클 횟수: 4
 };
 
-// 오늘 날짜를 YYYY-MM-DD 형식으로 가져오기
+// 오늘 날짜를 YYYY-MM-DD 형식으로 가져오기 (로컬 시간대 기준)
 const getTodayDate = (): string => {
   const today = new Date();
-  return today.toISOString().split('T')[0];
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 // 로컬 스토리지에서 설정 불러오기

@@ -12,6 +12,19 @@ interface TimerSettings {
   cycleCount: number; // 뽀모도로 사이클 반복 횟수
 }
 
+// 날짜별 기록
+interface DailyRecord {
+  date: string; // YYYY-MM-DD
+  totalFocusTime: number; // 초 단위
+  pomodoroCount: number;
+  goalAchieved: boolean;
+}
+
+// 히스토리 데이터 (날짜를 키로 사용)
+interface HistoryData {
+  [date: string]: DailyRecord;
+}
+
 const DEFAULT_SETTINGS: TimerSettings = {
   focus: 25,
   shortBreak: 5,
@@ -22,18 +35,98 @@ const DEFAULT_SETTINGS: TimerSettings = {
   cycleCount: 4, // 기본 사이클 횟수: 4
 };
 
+// 오늘 날짜를 YYYY-MM-DD 형식으로 가져오기
+const getTodayDate = (): string => {
+  const today = new Date();
+  return today.toISOString().split('T')[0];
+};
+
+// 로컬 스토리지에서 설정 불러오기
+const loadSettings = (): TimerSettings => {
+  try {
+    const saved = localStorage.getItem("pomodoroSettings");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (error) {
+    console.error("Failed to load settings:", error);
+  }
+  return DEFAULT_SETTINGS;
+};
+
+// 로컬 스토리지에서 히스토리 불러오기
+const loadHistory = (): HistoryData => {
+  try {
+    const saved = localStorage.getItem("pomodoroHistory");
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (error) {
+    console.error("Failed to load history:", error);
+  }
+  return {};
+};
+
+// 오늘 날짜의 데이터 가져오기
+const getTodayData = (history: HistoryData): DailyRecord => {
+  const today = getTodayDate();
+  return history[today] || {
+    date: today,
+    totalFocusTime: 0,
+    pomodoroCount: 0,
+    goalAchieved: false,
+  };
+};
+
 function App() {
   const [mode, setMode] = useState<TimerMode>("focus");
-  const [settings, setSettings] = useState<TimerSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<TimerSettings>(loadSettings());
   const [timeLeft, setTimeLeft] = useState(settings.focus * 60);
   const [initialTime, setInitialTime] = useState(settings.focus * 60);
   const [isRunning, setIsRunning] = useState(false);
-  const [pomodoroCount, setPomodoroCount] = useState(0);
-  const [totalFocusTime, setTotalFocusTime] = useState(0);
+
+  // 히스토리 데이터
+  const [history, setHistory] = useState<HistoryData>(loadHistory());
+  const todayData = getTodayData(history);
+
+  const [pomodoroCount, setPomodoroCount] = useState(todayData.pomodoroCount);
+  const [totalFocusTime, setTotalFocusTime] = useState(todayData.totalFocusTime);
+  const [goalAchieved, setGoalAchieved] = useState(todayData.goalAchieved);
+
   const [showSettings, setShowSettings] = useState(false);
-  const [goalAchieved, setGoalAchieved] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [pausedTime, setPausedTime] = useState<number>(0);
+
+  // 설정을 로컬 스토리지에 저장
+  useEffect(() => {
+    try {
+      localStorage.setItem("pomodoroSettings", JSON.stringify(settings));
+    } catch (error) {
+      console.error("Failed to save settings:", error);
+    }
+  }, [settings]);
+
+  // 오늘의 데이터를 히스토리에 저장
+  useEffect(() => {
+    const today = getTodayDate();
+    const updatedHistory: HistoryData = {
+      ...history,
+      [today]: {
+        date: today,
+        totalFocusTime,
+        pomodoroCount,
+        goalAchieved,
+      },
+    };
+    setHistory(updatedHistory);
+
+    try {
+      localStorage.setItem("pomodoroHistory", JSON.stringify(updatedHistory));
+    } catch (error) {
+      console.error("Failed to save history:", error);
+    }
+  }, [totalFocusTime, pomodoroCount, goalAchieved]);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission === "default") {
@@ -383,6 +476,25 @@ function App() {
       <div className="w-full max-w-lg">
         {/* 메인 카드 */}
         <div className="backdrop-blur-xl bg-white/10 rounded-3xl shadow-2xl border border-white/20 p-8 relative">
+          {/* 달력 버튼 */}
+          <button
+            onClick={() => setShowCalendar(!showCalendar)}
+            className="absolute top-6 right-16 p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-all"
+            aria-label="달력">
+            <svg
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+          </button>
+
           {/* 설정 버튼 */}
           <button
             onClick={() => setShowSettings(!showSettings)}
@@ -577,6 +689,15 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* 달력 모달 */}
+        {showCalendar && (
+          <Calendar
+            history={history}
+            goalTime={settings.goalTime}
+            onClose={() => setShowCalendar(false)}
+          />
+        )}
       </div>
     </div>
   );
@@ -714,6 +835,222 @@ function SettingsForm({
           className="flex-1 bg-gray-200 text-gray-700 font-bold py-3 rounded-lg hover:bg-gray-300 transition-all">
           취소
         </button>
+      </div>
+    </div>
+  );
+}
+
+// 달력 컴포넌트
+function Calendar({
+  history,
+  goalTime,
+  onClose,
+}: {
+  history: HistoryData;
+  goalTime: number;
+  onClose: () => void;
+}) {
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  // 해당 월의 첫 날과 마지막 날
+  const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+  const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+
+  // 달력에 표시할 날짜 배열 생성
+  const startDay = firstDay.getDay(); // 0(일) ~ 6(토)
+  const daysInMonth = lastDay.getDate();
+
+  const calendarDays: (number | null)[] = [];
+
+  // 첫 주의 빈 칸
+  for (let i = 0; i < startDay; i++) {
+    calendarDays.push(null);
+  }
+
+  // 실제 날짜
+  for (let day = 1; day <= daysInMonth; day++) {
+    calendarDays.push(day);
+  }
+
+  const formatTotalTime = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    }
+    return `${mins}m`;
+  };
+
+  const getDateKey = (day: number): string => {
+    const year = currentDate.getFullYear();
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const dayStr = String(day).padStart(2, '0');
+    return `${year}-${month}-${dayStr}`;
+  };
+
+  const goToPrevMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
+  };
+
+  const goToNextMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+  };
+
+  const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+      onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}>
+
+        {/* 헤더 */}
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">
+            집중 기록
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-all">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* 월 선택 */}
+        <div className="flex items-center justify-between mb-6">
+          <button
+            onClick={goToPrevMonth}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-all">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h3 className="text-xl font-bold text-gray-800">
+            {currentDate.getFullYear()}년 {monthNames[currentDate.getMonth()]}
+          </h3>
+          <button
+            onClick={goToNextMonth}
+            className="p-2 rounded-lg hover:bg-gray-100 transition-all">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+
+        {/* 요일 */}
+        <div className="grid grid-cols-7 gap-2 mb-2">
+          {dayNames.map((dayName, index) => (
+            <div
+              key={dayName}
+              className={`text-center font-bold py-2 ${
+                index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-gray-700'
+              }`}>
+              {dayName}
+            </div>
+          ))}
+        </div>
+
+        {/* 날짜 */}
+        <div className="grid grid-cols-7 gap-2">
+          {calendarDays.map((day, index) => {
+            if (day === null) {
+              return <div key={`empty-${index}`} className="aspect-square" />;
+            }
+
+            const dateKey = getDateKey(day);
+            const dayData = history[dateKey];
+            const hasData = dayData && dayData.totalFocusTime > 0;
+            const isGoalAchieved = dayData && dayData.goalAchieved;
+            const isToday = dateKey === getTodayDate();
+            const dayOfWeek = (startDay + day - 1) % 7;
+
+            return (
+              <div
+                key={day}
+                className={`aspect-square p-2 rounded-lg border-2 transition-all ${
+                  isToday
+                    ? 'border-purple-500 bg-purple-50'
+                    : hasData
+                    ? 'border-gray-200 bg-gray-50'
+                    : 'border-gray-100'
+                } hover:shadow-md`}>
+                <div className="flex flex-col h-full">
+                  <div className={`text-sm font-bold mb-1 ${
+                    dayOfWeek === 0 ? 'text-red-500' : dayOfWeek === 6 ? 'text-blue-500' : 'text-gray-700'
+                  }`}>
+                    {day}
+                    {isGoalAchieved && <span className="ml-1 text-green-500">✓</span>}
+                  </div>
+                  {hasData && (
+                    <div className="text-xs space-y-1 flex-1">
+                      <div className="text-purple-600 font-semibold">
+                        {formatTotalTime(dayData.totalFocusTime)}
+                      </div>
+                      <div className="text-gray-600">
+                        🍅 {dayData.pomodoroCount}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 통계 요약 */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <h3 className="text-lg font-bold text-gray-800 mb-3">이번 달 통계</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-purple-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-purple-600">
+                {(Object.values(history)
+                  .filter(record => {
+                    const recordDate = new Date(record.date);
+                    return (
+                      recordDate.getMonth() === currentDate.getMonth() &&
+                      recordDate.getFullYear() === currentDate.getFullYear()
+                    );
+                  })
+                  .reduce((sum, record) => sum + record.totalFocusTime, 0) / 3600).toFixed(1)}
+                h
+              </div>
+              <div className="text-sm text-gray-600 mt-1">총 집중 시간</div>
+            </div>
+            <div className="bg-pink-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-pink-600">
+                {Object.values(history)
+                  .filter(record => {
+                    const recordDate = new Date(record.date);
+                    return (
+                      recordDate.getMonth() === currentDate.getMonth() &&
+                      recordDate.getFullYear() === currentDate.getFullYear()
+                    );
+                  })
+                  .reduce((sum, record) => sum + record.pomodoroCount, 0)}
+              </div>
+              <div className="text-sm text-gray-600 mt-1">완료한 뽀모도로</div>
+            </div>
+            <div className="bg-green-50 rounded-lg p-4 text-center">
+              <div className="text-2xl font-bold text-green-600">
+                {Object.values(history)
+                  .filter(record => {
+                    const recordDate = new Date(record.date);
+                    return (
+                      recordDate.getMonth() === currentDate.getMonth() &&
+                      recordDate.getFullYear() === currentDate.getFullYear() &&
+                      record.goalAchieved
+                    );
+                  }).length}
+              </div>
+              <div className="text-sm text-gray-600 mt-1">목표 달성일</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

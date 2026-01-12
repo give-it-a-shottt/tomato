@@ -306,7 +306,12 @@ function App() {
     setInitialTime(newTime);
     setPausedTime(newTime);
     setIsRunning(autoStart);
-    // isRunning이 변경되면 useEffect(119-129)가 자동으로 startTime을 설정함
+    // 자동 시작 시 startTime을 현재 시간으로 직접 설정
+    if (autoStart) {
+      setStartTime(Date.now());
+    } else {
+      setStartTime(null);
+    }
   };
 
   const toggleTimer = () => {

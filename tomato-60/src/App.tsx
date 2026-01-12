@@ -304,9 +304,9 @@ function App() {
     setMode(newMode);
     setTimeLeft(newTime);
     setInitialTime(newTime);
-    setStartTime(null);
     setPausedTime(newTime);
     setIsRunning(autoStart);
+    // isRunning이 변경되면 useEffect(119-129)가 자동으로 startTime을 설정함
   };
 
   const toggleTimer = () => {

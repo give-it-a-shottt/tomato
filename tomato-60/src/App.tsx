@@ -722,6 +722,26 @@ function SettingsForm({
   const [goalTime, setGoalTime] = useState(settings.goalTime);
   const [cycleCount, setCycleCount] = useState(settings.cycleCount);
 
+  // 목표시간 기반 필요한 사이클 수 계산
+  const calculateRequiredCycles = (goalHours: number, focusMinutes: number): number => {
+    const goalMinutes = goalHours * 60;
+    return Math.ceil(goalMinutes / focusMinutes);
+  };
+
+  // 목표시간 변경 시 사이클 수 자동 계산
+  const handleGoalTimeChange = (newGoalTime: number) => {
+    setGoalTime(newGoalTime);
+    const requiredCycles = calculateRequiredCycles(newGoalTime, focus);
+    setCycleCount(requiredCycles);
+  };
+
+  // 집중 시간 변경 시에도 사이클 수 재계산
+  const handleFocusChange = (newFocus: number) => {
+    setFocus(newFocus);
+    const requiredCycles = calculateRequiredCycles(goalTime, newFocus);
+    setCycleCount(requiredCycles);
+  };
+
   const handleSave = () => {
     onSave({ focus, shortBreak, longBreak, autoStartBreaks, autoStartFocus, goalTime, cycleCount });
   };
@@ -737,7 +757,7 @@ function SettingsForm({
           min="1"
           max="60"
           value={focus}
-          onChange={(e) => setFocus(Number(e.target.value))}
+          onChange={(e) => handleFocusChange(Number(e.target.value))}
           className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-purple-500 focus:outline-none text-lg font-semibold"
         />
       </div>
@@ -777,25 +797,28 @@ function SettingsForm({
           min="1"
           max="24"
           value={goalTime}
-          onChange={(e) => setGoalTime(Number(e.target.value))}
+          onChange={(e) => handleGoalTimeChange(Number(e.target.value))}
           className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-orange-500 focus:outline-none text-lg font-semibold"
         />
+        <p className="text-xs text-gray-500 mt-1">
+          {goalTime}시간 달성을 위해 약 {calculateRequiredCycles(goalTime, focus)}번의 집중 세션이 필요합니다
+        </p>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          사이클 반복 횟수
+          사이클 표시 횟수 (자동 계산됨)
         </label>
         <input
           type="number"
           min="1"
-          max="12"
+          max="100"
           value={cycleCount}
           onChange={(e) => setCycleCount(Number(e.target.value))}
-          className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-purple-500 focus:outline-none text-lg font-semibold"
+          className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-purple-500 focus:outline-none text-lg font-semibold bg-gray-50"
         />
         <p className="text-xs text-gray-500 mt-1">
-          표시할 점의 개수 (긴 휴식은 항상 4번째마다)
+          목표 시간과 집중 시간에 따라 자동 계산됩니다 (수동 수정 가능)
         </p>
       </div>
 
@@ -843,7 +866,7 @@ function SettingsForm({
 // 달력 컴포넌트
 function Calendar({
   history,
-  goalTime,
+  goalTime: _goalTime,
   onClose,
 }: {
   history: HistoryData;

@@ -97,6 +97,37 @@ function App() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [pausedTime, setPausedTime] = useState<number>(0);
+  const [currentDate, setCurrentDate] = useState(getTodayDate());
+
+  // 날짜 변경 감지 - 자정마다 데이터 리셋
+  useEffect(() => {
+    const checkDateChange = () => {
+      const today = getTodayDate();
+      if (today !== currentDate) {
+        // 날짜가 바뀌었음! 데이터 리셋
+        setCurrentDate(today);
+        setPomodoroCount(0);
+        setTotalFocusTime(0);
+        setGoalAchieved(false);
+        setIsRunning(false);
+        setStartTime(null);
+
+        // 타이머도 초기화
+        const newTime = settings.focus * 60;
+        setTimeLeft(newTime);
+        setInitialTime(newTime);
+        setPausedTime(newTime);
+      }
+    };
+
+    // 1분마다 날짜 체크
+    const interval = setInterval(checkDateChange, 60000);
+
+    // 컴포넌트 마운트 시에도 한 번 체크
+    checkDateChange();
+
+    return () => clearInterval(interval);
+  }, [currentDate, settings.focus]);
 
   // 설정을 로컬 스토리지에 저장
   useEffect(() => {

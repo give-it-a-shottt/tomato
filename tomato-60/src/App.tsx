@@ -296,6 +296,15 @@ function App() {
   }, [isRunning, startTime, initialTime]);
 
   const handleTimerComplete = () => {
+    // focus 모드였다면 집중 시간 먼저 추가 (중복 방지)
+    if (mode === "focus" && currentFocusStartTime !== null) {
+      const focusedSeconds = Math.floor((Date.now() - currentFocusStartTime) / 1000);
+      if (focusedSeconds > 0) {
+        setTotalFocusTime((total) => total + focusedSeconds);
+      }
+      setCurrentFocusStartTime(null);
+    }
+
     setIsRunning(false);
     setStartTime(null);
 

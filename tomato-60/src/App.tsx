@@ -101,6 +101,7 @@ function App() {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [pausedTime, setPausedTime] = useState<number>(0);
   const [currentDate, setCurrentDate] = useState(getTodayDate());
+  const [currentFocusStartTime, setCurrentFocusStartTime] = useState<number | null>(null);
 
   // 날짜 변경 감지 - 자정마다 데이터 리셋
   useEffect(() => {
@@ -168,12 +169,13 @@ function App() {
     }
   }, []);
 
-  // Page Visibility API - 탭 활성화 시 정확한 시간 재계산
+  // Page Visibility API - 백그라운드에서도 정확한 시간 유지
   useEffect(() => {
     const handleVisibilityChange = () => {
+      const now = Date.now();
+
       if (!document.hidden && isRunning && startTime !== null) {
-        // 탭이 다시 활성화되었을 때 실제 경과 시간 재계산
-        const now = Date.now();
+        // 탭이 다시 활성화될 때 - 정확한 경과 시간 재계산
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
         const newTimeLeft = Math.max(0, initialTime - elapsedSeconds);
         setTimeLeft(newTimeLeft);
@@ -242,36 +244,43 @@ function App() {
     }
   }, [totalFocusTime, settings.goalTime, goalAchieved]);
 
-  // 타이머 시작/정지 시 시간 기록
+  // 타이머 시작/정지 시 시간 기록 & 집중 시간 계산
   useEffect(() => {
     if (isRunning) {
       // 타이머 시작 - 현재 시간에서 이미 경과한 시간을 뺀 시점을 시작 시간으로 설정
       const elapsedSeconds = initialTime - timeLeft;
       setStartTime(Date.now() - elapsedSeconds * 1000);
+
+      // focus 모드일 때만 집중 세션 시작 시간 기록
+      if (mode === "focus") {
+        setCurrentFocusStartTime(Date.now() - elapsedSeconds * 1000);
+      }
     } else {
-      // 타이머 정지 - 현재 남은 시간을 기록
+      // 타이머 정지 - 집중 시간 추가 (focus 모드였다면)
+      if (currentFocusStartTime !== null) {
+        const focusedSeconds = Math.floor((Date.now() - currentFocusStartTime) / 1000);
+        if (focusedSeconds > 0) {
+          setTotalFocusTime((total) => total + focusedSeconds);
+        }
+        setCurrentFocusStartTime(null);
+      }
+
+      // 현재 남은 시간을 기록
       setPausedTime(timeLeft);
       setStartTime(null);
     }
-  }, [isRunning]);
+  }, [isRunning, currentFocusStartTime, initialTime, timeLeft]);
+
 
   // 정확한 타이머 로직 - 실제 경과 시간 기반
   useEffect(() => {
     let interval: number | undefined;
-    let lastFocusUpdate = Date.now();
 
     if (isRunning && startTime !== null) {
       interval = window.setInterval(() => {
         const now = Date.now();
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
         const newTimeLeft = Math.max(0, initialTime - elapsedSeconds);
-
-        // 집중 시간 업데이트 (1초에 한 번만)
-        if (mode === "focus" && now - lastFocusUpdate >= 1000) {
-          const secondsToAdd = Math.floor((now - lastFocusUpdate) / 1000);
-          setTotalFocusTime((total) => total + secondsToAdd);
-          lastFocusUpdate = now;
-        }
 
         setTimeLeft(newTimeLeft);
 
@@ -284,7 +293,7 @@ function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isRunning, startTime, mode, initialTime]);
+  }, [isRunning, startTime, initialTime]);
 
   const handleTimerComplete = () => {
     setIsRunning(false);
@@ -427,6 +436,15 @@ function App() {
   };
 
   const switchMode = (newMode: TimerMode, autoStart: boolean = false) => {
+    // 이전 모드가 focus였고 타이머가 실행 중이었다면 집중 시간 추가
+    if (mode === "focus" && currentFocusStartTime !== null) {
+      const focusedSeconds = Math.floor((Date.now() - currentFocusStartTime) / 1000);
+      if (focusedSeconds > 0) {
+        setTotalFocusTime((total) => total + focusedSeconds);
+      }
+      setCurrentFocusStartTime(null);
+    }
+
     const newTime = settings[newMode] * 60;
     setMode(newMode);
     setTimeLeft(newTime);
@@ -436,6 +454,10 @@ function App() {
     // 자동 시작 시 startTime을 현재 시간으로 직접 설정
     if (autoStart) {
       setStartTime(Date.now());
+      // focus 모드로 자동 시작한다면 집중 세션 시작 시간 기록
+      if (newMode === "focus") {
+        setCurrentFocusStartTime(Date.now());
+      }
     } else {
       setStartTime(null);
     }

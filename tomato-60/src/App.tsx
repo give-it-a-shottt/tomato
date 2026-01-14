@@ -296,15 +296,7 @@ function App() {
   }, [isRunning, startTime, initialTime]);
 
   const handleTimerComplete = () => {
-    // focus 모드였다면 집중 시간 먼저 추가 (중복 방지)
-    if (mode === "focus" && currentFocusStartTime !== null) {
-      const focusedSeconds = Math.floor((Date.now() - currentFocusStartTime) / 1000);
-      if (focusedSeconds > 0) {
-        setTotalFocusTime((total) => total + focusedSeconds);
-      }
-      setCurrentFocusStartTime(null);
-    }
-
+    // useEffect에서 집중 시간을 추가하므로 여기서는 제거
     setIsRunning(false);
     setStartTime(null);
 
